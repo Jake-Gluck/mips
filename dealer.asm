@@ -35,9 +35,12 @@
 	.data
 # constants
 Multiplier:	.word	1073807359	# a sufficiently large prime
-Seed:		.word	0
+Seed:		.word	0		# delcared seed for linear congruence algorithm
 Range:		.word	51		# Your shuffling subroutine needs to get a random number between 0 and 51
-TempBuffer:  	.space 2        	# Reserve 2 bytes for temporary input storage
+TempBuffer:  	.space 	2        	# Space for temporary input storage, 2 bytes
+Cards:  	.space 208              # Space for 52 cards, 4 bytes each
+Deck:   	.space 208              # Space for 52 cards, 4 bytes each
+Discard: 	.space 208            	# Space for 52 cards, 4 bytes each
 UserPrompt:	.asciiz "Enter s to shuffle, d to draw, or q to quit.\n"
 ErrorMessage:	.asciiz "Invalid input.\n"
 Newline:	.asciiz "\n"
@@ -54,9 +57,9 @@ main:
 
 	# just some code to test print the unshuffled Cards array
 	# delete it when you like
-	li	$t0, 52
-	la	$t1, Cards
-	li	$v0, 4 
+	#li	$t0, 52
+	#la	$t1, Cards
+	#li	$v0, 4 
 	
 ValidateUserInput:
 	# prompt user
@@ -73,7 +76,7 @@ ValidateUserInput:
         li $v0, 8                	# syscall to read a string
         la $a0, TempBuffer       	# load address of TempBuffer
         li $a1, 2                	# read up to 1 character + null terminator
-        syscall                  	# perform the syscall, discard the newline (if any)
+        syscall                  	# perform the syscall, discard the newline (if there is one)
     
         # check if user input is valid (s, S, d, D, q, or Q)
         li $t1, 115			# load ascii value for s
@@ -145,19 +148,19 @@ GetRandom52:
 	
 	# next range fit the raw random for output
 
-	# 1) divide the raw random by the precalculated range
-	div $t2, $t3		# $t2 / $t3, lo = quotient, hi = remainder
+	# 1) divide the raw random by the precalculated range (unsigned division)
+	divu $t2, $t3		# unsigned divide $t2 by $t3, lo = quotient, hi = remainder
 			
-	# 2) hi hold the ranged random after division
+	# 2) hi holds the ranged random after division
 	mfhi $t4		# sets $t4 = remainder of $t2 / $t3
 	
 	# 3) add minimum to the ranged random 
 	# the range is 0 - 51 so the minimum is 0, so no need to add 0 to $t4
 	
 	#4) copy $t4 to $s0 so it can be used in other functions
-	move $t4, $s0	# $s0 = $t4
+	move $s0, $t4		# $s0 = $t4
 	
-	jr	$ra		# return to the function that called GetRandom52
+	jr $ra			# return to the function that called GetRandom52
 
 ##############################################################################
 # The shuffle routine should copy the Cards array to your deck array and clear
@@ -168,10 +171,63 @@ GetRandom52:
 # reshuffling what has already been shuffled.
 ##############################################################################
 Shuffle:
-	li $v0, 4			# tells the system its going to want to print a string
-	la $a0, ShufflePrompt	        # load the address of label Prompt into $a0
-	syscall				# do the thing, print the 
-	j Quit
+
+	# clear Discard array
+	
+        li $t0, 52              	# load 52(# of cards) into $t0
+        la $t1, Discard         	# load base address of Discard array into $t1
+        
+        # sub routine loop to clear Discard array
+        ClearDiscardLoop:
+        sw $zero, 0($t1)        	# Discard[i] = 0, clears card in Discard[i]
+        addi $t1, $t1, 4        	# iterate to next card in Discard array
+        addi $t0, $t0, -1       	# decrement counter that controls number of loop iterations
+        bgtz $t0, ClearDiscardLoop 	# if counter is > 0, repeat ClearDiscardLoop
+
+
+	# copy Cards to Deck
+	li $t0, 52                	# load 52(# of cards) into $t0
+	la $t1, Cards             	# load base address of Cards array into $t1
+	la $t2, Deck              	# load base address of Deck array into $t2
+
+        # sub routine loop to copy Cards to Deck
+	CopyCardsLoop:
+   	lw $t3, 0($t1)        		# load Cards[i] into $t3
+    	sw $t3, 0($t2)        		# store Cards[i] in Deck[i]
+    	addi $t1, $t1, 4     		# increment Cards pointer
+    	addi $t2, $t2, 4     		# increment Deck pointer
+    	addi $t0, $t0, -1    		# decrement counter that controls number of loop iterations
+    	bgtz $t0, CopyCardsLoop		# if counter is > 0, repeat CopyCardsLoop
+
+	# shuffle deck
+   	li $t0, 52                	# load 52(# of cards) into $t0
+    	la $t1, Deck              	# load address of Deck array into $t1
+    	
+    	#sub routine loop to shuffle the loop
+    	
+	ShuffleLoop:
+    	jal GetRandom52       		# generate a random index by calling GetRandom52 sub routine
+    	move $t2, $s0         		# save random index in $t2
+
+    	# calculate addresses of Deck[i] and Deck[random]
+    	mul $t3, $t0, 4       		# $t3 = i * 4 (byte offset for Deck[i])
+    	add $t4, $t1, $t3     		# $t4 = address of Dick[i] = byte offset for Deck[i] + base address of Deck 
+    	mul $t5, $t2, 4       		# $t5 = random num($t2) * byte offset(4) = byte offset for random num)
+    	add $t6, $t1, $t5     		# $t6 = address of Deck[random](random num byte offset + base address of deck)
+
+    	# swap Deck[i] and Deck[random]
+    	lw $t7, 0($t4)        		# load Deck[i] into $t7
+    	lw $t8, 0($t6)        		# load Deck[random] into $t8
+    	sw $t8, 0($t4)        		# store Deck[random] at Deck[i]
+    	sw $t7, 0($t6)        		# store Deck[i] at Deck[random]
+
+    	addiu $t0, $t0, -1    		# decrement counter that controls shuffle loop by 1
+    	bgtz $t0, ShuffleLoop		# if counter is still > 0, repeat shuffle loop
+
+	#li $v0, 4			# tells the system its going to want to print a string
+	#la $a0, ShufflePrompt	        # load the address of label Prompt into $a0
+	#syscall				# do the thing, print the 
+	#j Quit
 
 ##############################################################################
 # Let the main program keep track of the index of the current draw card.  When
@@ -186,10 +242,32 @@ Shuffle:
 # routine, must update the index when a card is drawn.
 ##############################################################################
 DrawCard:
-	li $v0, 4			# tells the system its going to want to print a string
-	la $a0, DrawCardPrompt	        # load the address of label Prompt into $a0
-	syscall				# do the thing, print the 
-	j Quit
+	# inputs: $a0 = DeckIndex
+	# outputs: $v0 = Pointer to drawn card
+
+	# calculate addresses
+	la $t0, Deck             # load base address of Deck array into $t0
+	mul $t1, $a0, 4          # $t1 = DeckIndex($a0) * 4(byte offset)
+	add $t2, $t0, $t1        # $t2 = address of Deck[DeckIndex](Deck base address + DeckIndex offset)
+
+	# load card from Deck
+	lw $v0, 0($t2)           # load Deck[DeckIndex] into $v0
+	sw $zero, 0($t2)         # clear Deck[DeckIndex], zeroes $t2, removes card
+
+	# move card to Discard
+	la $t3, Discard          # load address of Discard array to $t3
+	li $t4, 51               # load 51(max index for Discard array) to $t4
+	sub $t5, $t4, $a0        # $t5(DiscardIndex) = 51 - DeckIndex
+	mul $t6, $t5, 4          # $t6 = DiscardIndex * 4(byte offset)
+	add $t7, $t3, $t6        # $t7 = Address of Discard[DiscardIndex]
+	sw $v0, 0($t7)           # store card pointer in Discard
+
+	jr $ra                   # return to function that called DrawCard
+
+	#li $v0, 4			# tells the system its going to want to print a string
+	#la $a0, DrawCardPrompt	        # load the address of label Prompt into $a0
+	#syscall				# do the thing, print the 
+	#j Quit
 
 ##############################################################################
 # THIS IS THE CODE TO INITIALIZE THE CARDS AND THE CARD ARRAY.
