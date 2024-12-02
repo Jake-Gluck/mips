@@ -35,34 +35,26 @@
 ##############################################################################
 .data
 # constants
+TempBuffer:  		.space 	2        	# Space for temporary input storage, 2 bytes
+Deck:   		.space 208              # Space for 52 cards, 4 bytes each
+Discard: 		.space 208            	# Space for 52 cards, 4 bytes each
+CurrentDrawIndex: 	.word 51  		# Initially set to 51 after shuffling
 Multiplier: 		.word 1073807359 	# a sufficiently large prime
 Seed: 			.word 0 		# delcared seed for linear congruence algorithm
+Range:			.word 51		# Your shuffling subroutine needs to get a random number between 0 and 51
 Newline: 		.asciiz "\n"
 UserPrompt:		.asciiz "Enter s to shuffle, d to draw, or q to quit.\n"
 ErrorMessage:		.asciiz "Invalid input.\n"
 DrawMessage:		.asciiz	"Drawing a card...\n"
-DrawEmptyMessage:	.asciiz	"Error, there are no more cards left to draw.\n"
+DrawEmptyMessage:	.asciiz	"Error, there are no more cards left to draw.\nEnter s to shuffle or q to quit.\n"
 DrawCardMessage:	.asciiz "The card you drew was the "
-TempBuffer:  		.space 	2        	# Space for temporary input storage, 2 bytes
-Deck:   		.space 208              # Space for 52 cards, 4 bytes each
-Discard: 		.space 208            	# Space for 52 cards, 4 bytes each
-CurrentDrawIndex: .word 51  			# Initially set to 51 after shuffling
-
-#----- Your data definitions go here -----#
+ShufflingMessage:	.asciiz "Shuffling cards...\n"
 .text
 .globl main
-
-
 
 main:
 jal initCards 			# initialize the Cards array
 j ValidateUserInput		# validate user input
-
-
-
-
-
-
 
 #
 # just some code to test print the unshuffled Cards array
@@ -115,35 +107,18 @@ syscall				# perform the syscall
 j ValidateUserInput		# jump to ValidateUserInput to re-prompt user to enter valid input
 
 
-
-PrintLoop:
-blez $t0, Endit
-addiu $t0, $t0, -1
-lw $a0, 0($t1) # get address of next string
-syscall # and print it
-la $a0, Newline # and then print a new line
-syscall
-addiu $t1, $t1, 4 # get next string pointer address
-j PrintLoop
-
-
-
-
-
-
-
 Endit:
-li $v0, 10
-syscall
+li $v0, 10			# syscall for exit
+syscall				# exit the program
 ##############################################################################
 # Your shuffling subroutine needs to get a random number between 0 and 51.
 # Call this random subroutine anytime you need a new random number
 ##############################################################################
 GetRandom52:
 # This is how you get the seed from the system time		
-li	$v0, 30			# syscall for retrieve system time ($a0 = seconds since epoch)
+li $v0, 30			# syscall for retrieve system time ($a0 = seconds since epoch)
 syscall				# retrieve system time 	
-sw	$a0, Seed 		# stores seconds since epoch into Seed label
+sw $a0, Seed 			# stores seconds since epoch into Seed label
 	
 lw $t0, Seed			# loads Seed into $t0
 lw $t1, Multiplier		# loads Multiplier into $t1
@@ -174,6 +149,7 @@ mfhi $t4		# sets $t4 = remainder of $t2 / $t3
 move $s0, $t4		# $s0 = $t4
 	
 jr $ra			# return to the function that called GetRandom52
+
 ##############################################################################
 # The shuffle routine should copy the Cards array to your deck array and clear
 # the discard array. You can then shuffle the deck array by looping through
@@ -203,7 +179,8 @@ la $t0, Discard			# load address of Discard array to $t0
 li $t2, 0			# load 0 to $t2, the counter that controls the loop, it will increment at the end of each loop
 
 ClearLoop:
-beqz $t2, 52, ShuffleDeck		# branch to ShuffleDeck when the counter($t2) = 0
+#beqz $t2, 52, ShuffleDeck		# branch to ShuffleDeck when the counter($t2) = 0
+beq $t2, 52, ShuffleDeck		# branch to ShuffleDeck when the counter($t2) = 0
 sw $zero, 0($t0)		# copies 0 into offset(Discard), removing the card that was in that index of Discard array
 addi $t0, $t0, 4		# increment to the next card in the Discard array
 addi $t2, $t2, 1		# increment the counter that controls the loop ($t2) by 1
@@ -233,10 +210,15 @@ addi $t2, $t2, 1		# increnent counter $t2
 j ShuffleLoop			# jump to beginning of ShuffleLoop function to repeat this swap for every index in Deck array	
 
 ShuffleComplete:
+# print Shuffling...
+li $v0, 4			# syscall to to print a string
+la $a0, ShufflingMessage	# load the address of label ShufflingMessage into $a0
+syscall				# perform the syscall
+
+# reset CurrentDrawIndex to 51 and then jump to ValidateUserInput
+li $t0, 51              	# load the value 51 into $t0
+sw $t0, CurrentDrawIndex 	# store the value 51 into CurrentDrawIndex
 j ValidateUserInput		# jump to ValidateUserInput
-
-
-
 
 ##############################################################################
 # Let the main program keep track of the index of the current draw card. When
@@ -293,14 +275,50 @@ lw $a0, 0($t3)   		# load the address of the string($t3) into $a0
 li $v0, 4			# syscall to to print a string
 syscall             		# syscall to print the string in $a0
 
+# print a Newline
+li $v0, 4			# syscall to to print a string
+la $a0, Newline	        	# load the address of label Newline into $a0
+syscall				# perform the syscall
+
 # return to ValidateUserInput
 j ValidateUserInput		# jump to ValidateUserInput function
 
 DrawEmpty:
+# print message informing the user that the Deck to draw from is empty
 li $v0, 4			# syscall to print a string
 la $a0, DrawEmptyMessage	# load the address of label DrawEmptyMessage into $a0
 syscall				# perform the syscall
-j ValidateUserInput		# jump to ValidateUserInput function so user can shuffle or quit.
+
+# read user input
+li $v0, 12               	# syscall to read character
+syscall                  	# perform the syscall
+move $t0, $v0           	# store the character in $t0
+        
+# discard newline character from input        
+li $v0, 8                	# syscall to read a string
+la $a0, TempBuffer       	# load address of TempBuffer
+li $a1, 2                	# read up to 1 character + null terminator
+syscall                  	# perform the syscall, discard the newline (if there is one)
+    
+# check if user input is valid (s, S, q, or Q)
+li $t1, 115			# load ascii value for s
+beq $t0, $t1, Shuffle		# if user input is s, branch to Shuffle
+        
+li $t1, 83			# load ascii value for S
+beq $t0, $t1, Shuffle		# if user input is S, branch to Shuffle       
+	
+li $t1, 113			# load ascii value for q
+beq $t0, $t1, Endit		# if user input is q, branch to Quit
+        
+li $t1, 81			# load ascii value for Q
+beq $t0, $t1, Endit		# if user input is Q, branch to Quit
+        
+# if user input isn't valid
+li $v0, 4			# syscall to print a string
+la $a0, ErrorMessage	        # load the address of label ErrorMessage into $a0
+syscall				# perform the syscall
+
+j DrawEmpty			# loop back to DrawEmpty function to repeat user prompt
 
 ##############################################################################
 # THIS IS THE CODE TO INITIALIZE THE CARDS AND THE CARD ARRAY.
