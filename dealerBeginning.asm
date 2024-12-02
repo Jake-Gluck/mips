@@ -31,21 +31,23 @@
 # value returned in $a0 as your seed.
 #
 # Author: Patrick Kelley (skeleton file) 11.5.2023
-# Author:
+# Author: Jacob Gluck
 ##############################################################################
 .data
 # constants
-Multiplier: 		.word 1073807359 # a sufficiently large prime
-Seed: 			.word 0
+Multiplier: 		.word 1073807359 	# a sufficiently large prime
+Seed: 			.word 0 		# delcared seed for linear congruence algorithm
 Newline: 		.asciiz "\n"
 UserPrompt:		.asciiz "Enter s to shuffle, d to draw, or q to quit.\n"
 ErrorMessage:		.asciiz "Invalid input.\n"
 DrawMessage:		.asciiz	"Drawing a card...\n"
 DrawEmptyMessage:	.asciiz	"Error, there are no more cards left to draw.\n"
+DrawCardMessage:	.asciiz "The card you drew was the "
 TempBuffer:  		.space 	2        	# Space for temporary input storage, 2 bytes
 Deck:   		.space 208              # Space for 52 cards, 4 bytes each
 Discard: 		.space 208            	# Space for 52 cards, 4 bytes each
-CurrentDrawIndex	.word 0
+CurrentDrawIndex: .word 51  			# Initially set to 51 after shuffling
+
 #----- Your data definitions go here -----#
 .text
 .globl main
@@ -138,6 +140,40 @@ syscall
 # Call this random subroutine anytime you need a new random number
 ##############################################################################
 GetRandom52:
+# This is how you get the seed from the system time		
+li	$v0, 30			# syscall for retrieve system time ($a0 = seconds since epoch)
+syscall				# retrieve system time 	
+sw	$a0, Seed 		# stores seconds since epoch into Seed label
+	
+lw $t0, Seed			# loads Seed into $t0
+lw $t1, Multiplier		# loads Multiplier into $t1
+lw $t3, Range			# loads Range into $t3
+	
+# 1) multiply Seed by Multiplier
+mul $t5, $t0, $t1		# multiply Seed by Multiplier and save the product in $t5
+	
+# 2) lo replaces the old seed
+mflo $t0			# moves value from $lo to $t0, replacing seed with lo
+sw $t0, Seed  			# store the lower 32 bits into Seed
+	
+# 3) hi is the raw random number
+mfhi $t2			# moves value from $hi to $t2
+	
+# next range fit the raw random for output
+
+# 1) divide the raw random by the precalculated range (unsigned division)
+divu $t2, $t3		# unsigned divide $t2 by $t3, lo = quotient, hi = remainder
+			
+# 2) hi holds the ranged random after division
+mfhi $t4		# sets $t4 = remainder of $t2 / $t3
+	
+# 3) add minimum to the ranged random 
+# the range is 0 - 51 so the minimum is 0, so no need to add 0 to $t4
+	
+#4) copy $t4 to $s0 so it can be used in other functions
+move $s0, $t4		# $s0 = $t4
+	
+jr $ra			# return to the function that called GetRandom52
 ##############################################################################
 # The shuffle routine should copy the Cards array to your deck array and clear
 # the discard array. You can then shuffle the deck array by looping through
@@ -215,29 +251,50 @@ j ValidateUserInput		# jump to ValidateUserInput
 # routine, must update the index when a card is drawn.
 ##############################################################################
 DrawCard:
-# check if Deck is empty(draw index from main = 0)
-beqz $a0, DrawEmpty		# if draw index is 0, branch to DrawEmpty
+# load CurrentDrawIndex
+lw $t0, CurrentDrawIndex  	# $t0 = CurrentDrawIndex
+
+# check if Deck is empty(CurrentDrawIndex = 0)
+beqz $t0, DrawEmpty		# if CurrentDrawIndex is 0, branch to DrawEmpty
 
 # load the base addresses of the Deck and Discard arrays
-la $t0, Deck			# load base address of Deck array into $t0
-la $t1, Discard			# load base address of Discard array into $t1
+la $t1, Deck			# load base address of Deck array into $t1
+la $t2, Discard			# load base address of Discard array into $t2
 
 # calculate the address of Deck[DrawIndex]
-mul $t2, $a0, 4			# calculate byte offset for Deck[DrawIndex] = DrawIndex($a0) * 4, save in $t2
-add $t3, $t0, $t2		# address of Deck[DrawIndex] = Deck array base address + byte offset, save to $t3
-lw $v0, 0($t3)			# load card from Deck[DrawIndex] into $v0 to return as a pointer to main
+mul $t3, $t0, 4			# calculate byte offset for Deck[CurrentDrawIndex] = CurrentDrawIndex($t0) * 4, save in $t3
+add $t3, $t1, $t3		# address of Deck[CurrentDrawIndex] = Deck array base address + byte offset, save to $t3
+lw $v0, 0($t3)			# load the card from Deck[CurrentDrawIndex] into $v0
 
-# calculate the address of Discard[51 - DrawIndex]
+# calculate the address of Discard[51 - CurrentDrawIndex]
 li $t4, 51			# load value 51 into $t4
-sub $t4, $t4, $a0		# subtract DrawIndex($a0) from 51($t4) and save to $t4
+sub $t4, $t4, $t0		# subtract CurrentDrawIndex($t0) from 51($t4) and save to $t4
 mul $t4, $t4, 4 		# multiply $t4 by 4 bytes to get byte offset, save to $t4
-add $t5, $t1, $t4		# add byte offset and base address of Discard array to get address of Discard[51-DrawIndex], save to $t5
+add $t4, $t2, $t4		# add byte offset and base address of Discard array to get address of Discard[51-CurrentDrawIndex], save to $t4
 
 # store the drawn card in the Discard array
-sw $v0, 0($t5)			# store the drawn card in Discard array at Discard[51 - DrawnIndex]
+sw $v0, 0($t4)			# store the drawn card in Discard array at Discard[51 - DrawnIndex]($t4)
 
-# return to 
+addi $t0, $t0, -1         	# decrement CurrentDrawIndex by 1
+sw $t0, CurrentDrawIndex  	# store word back in CurrentDrawIndex
 
+# print Drawing a card...
+li $v0, 4			# syscall to to print a string
+la $a0, DrawMessage	        # load the address of label DrawMessage into $a0
+syscall				# perform the syscall
+
+# print the card drawn from Deck array
+li $v0, 4			# syscall to to print a string
+la $a0, DrawCardMessage	        # load the address of label DrawCardMessage into $a0
+syscall				# perform the syscall
+
+# print the card that was drawn from the deck
+lw $a0, 0($t3)   		# load the address of the string($t3) into $a0
+li $v0, 4			# syscall to to print a string
+syscall             		# syscall to print the string in $a0
+
+# return to ValidateUserInput
+j ValidateUserInput		# jump to ValidateUserInput function
 
 DrawEmpty:
 li $v0, 4			# syscall to print a string
