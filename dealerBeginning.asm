@@ -36,7 +36,9 @@
 .data
 # constants
 TempBuffer:  		.space 	2        	# Space for temporary input storage, 2 bytes
+.align 2         # Enforce word alignment for Deck
 Deck:   		.space 208              # Space for 52 cards, 4 bytes each
+.align 2         # Enforce word alignment for Discard
 Discard: 		.space 208            	# Space for 52 cards, 4 bytes each
 CurrentDrawIndex: 	.word 51  		# Initially set to 51 after shuffling
 Multiplier: 		.word 1073807359 	# a sufficiently large prime
@@ -49,6 +51,9 @@ DrawMessage:		.asciiz	"Drawing a card...\n"
 DrawEmptyMessage:	.asciiz	"Error, there are no more cards left to draw.\nEnter s to shuffle or q to quit.\n"
 DrawCardMessage:	.asciiz "The card you drew was the "
 ShufflingMessage:	.asciiz "Shuffling cards...\n"
+ShufflePrompt:	.asciiz	"\nShuffle selected\n"
+DrawCardPrompt:	.asciiz "\nDraw card selected\n"
+QuitPrompt:	.asciiz "\nQuit selected\n"
 .text
 .globl main
 
@@ -70,15 +75,26 @@ la $a0, UserPrompt	        # load the address of label Prompt into $a0
 syscall				# perform the syscall
 	
 # read user input
-li $v0, 12               	# syscall to read character
-syscall                  	# perform the syscall
-move $t0, $v0           	# store the character in $t0
-        
+#li $v0, 12               	# syscall to read character
+#syscall                  	# perform the syscall
+#move $t0, $v0           	# store the character in $t0
+
+                
 # discard newline character from input        
 li $v0, 8                	# syscall to read a string
 la $a0, TempBuffer       	# load address of TempBuffer
 li $a1, 2                	# read up to 1 character + null terminator
 syscall                  	# perform the syscall, discard the newline (if there is one)
+
+la $a0, TempBuffer   		# load the address of TempBuffer into $a0
+lb $t0, 0($a0)      		# load the first character from TempBuffer into $t0
+
+
+
+
+
+
+
     
 # check if user input is valid (s, S, d, D, q, or Q)
 li $t1, 115			# load ascii value for s
@@ -108,6 +124,9 @@ j ValidateUserInput		# jump to ValidateUserInput to re-prompt user to enter vali
 
 
 Endit:
+li $v0, 4			# syscall to to print a string
+la $a0, QuitPrompt	        # load the address of label ShufflePrompt into $a0
+syscall				# perform the syscall
 li $v0, 10			# syscall for exit
 syscall				# exit the program
 ##############################################################################
@@ -159,6 +178,10 @@ jr $ra			# return to the function that called GetRandom52
 # reshuffling what has already been shuffled.
 ##############################################################################
 Shuffle:
+li $v0, 4			# syscall to to print a string
+la $a0, ShufflePrompt	        # load the address of label ShufflePrompt into $a0
+syscall				# perform the syscall
+
 # copy the cards from the Card array to the Deck array
 la $t0, Cards			# load the base address of Cards array to $t0
 la $t1, Deck			# load the base address of Deck array to $t1
@@ -194,11 +217,16 @@ ShuffleLoop:
 beq $t2, 52, ShuffleComplete	# branch to ShuffleComplete when the counter($t2) = 52
 jal GetRandom52			# jump and link to GetRandom52 to generate a random number between 0 and 51
 move $t1, $s0			# copy randomly generated number from $s0 to $t1
+
+
 # calculate the offset for Deck[i] which is Deck[base address of Deck array + (i * 4)]
 la $t0, Deck			# load base address of Deck array to $t0
 mul $t3, $t2, 4			# multiply $t2(counter aka [i]) by 4 bytes to get the byte offset, save to $t3
 add $t4, $t0, $t3		# add byte offset($t3) to Deck array base address($t0) to get Deck[in-order index]
 lw $t5 0($t4)			# copy Deck[i] from $t4 to $t5, 
+
+
+
 # calculate the offset for Deck[randomly generated num] which is Deck[base addresss of Deck array + (randomly generated number * 4)]
 mul $t3, $t1, 4			# multiply random num ($t1) by 4 bytes to get the byte offset, save to $t3
 add $t6, $t0, $t3		# add byte offset ($t3) to Deck array base address ($t0) to get Deck[randomly generated number]
@@ -233,6 +261,10 @@ j ValidateUserInput		# jump to ValidateUserInput
 # routine, must update the index when a card is drawn.
 ##############################################################################
 DrawCard:
+li $v0, 4			# syscall to to print a string
+la $a0, DrawCardPrompt	        # load the address of label ShufflePrompt into $a0
+syscall				# perform the syscall
+
 # load CurrentDrawIndex
 lw $t0, CurrentDrawIndex  	# $t0 = CurrentDrawIndex
 
@@ -246,7 +278,7 @@ la $t2, Discard			# load base address of Discard array into $t2
 # calculate the address of Deck[DrawIndex]
 mul $t3, $t0, 4			# calculate byte offset for Deck[CurrentDrawIndex] = CurrentDrawIndex($t0) * 4, save in $t3
 add $t3, $t1, $t3		# address of Deck[CurrentDrawIndex] = Deck array base address + byte offset, save to $t3
-lw $v0, 0($t3)			# load the card from Deck[CurrentDrawIndex] into $v0
+
 
 # calculate the address of Discard[51 - CurrentDrawIndex]
 li $t4, 51			# load value 51 into $t4
@@ -254,8 +286,17 @@ sub $t4, $t4, $t0		# subtract CurrentDrawIndex($t0) from 51($t4) and save to $t4
 mul $t4, $t4, 4 		# multiply $t4 by 4 bytes to get byte offset, save to $t4
 add $t4, $t2, $t4		# add byte offset and base address of Discard array to get address of Discard[51-CurrentDrawIndex], save to $t4
 
+##lw $v0, 0($t3)			# load the card from Deck[CurrentDrawIndex] into $v0
 # store the drawn card in the Discard array
-sw $v0, 0($t4)			# store the drawn card in Discard array at Discard[51 - DrawnIndex]($t4)
+#sw $v0, 0($t4)			# store the drawn card in Discard array at Discard[51 - DrawnIndex]($t4)
+
+
+# Load the drawn card from Deck into $v0
+lw $v0, 0($t3)         # $t3 contains address of Deck[CurrentDrawIndex]
+
+# Store the drawn card into the Discard array
+sw $v0, 0($t4)         # Store the card (in $v0) at Discard[51 - CurrentDrawIndex
+
 
 addi $t0, $t0, -1         	# decrement CurrentDrawIndex by 1
 sw $t0, CurrentDrawIndex  	# store word back in CurrentDrawIndex
@@ -265,7 +306,7 @@ li $v0, 4			# syscall to to print a string
 la $a0, DrawMessage	        # load the address of label DrawMessage into $a0
 syscall				# perform the syscall
 
-# print the card drawn from Deck array
+# print the DrawCardMessage
 li $v0, 4			# syscall to to print a string
 la $a0, DrawCardMessage	        # load the address of label DrawCardMessage into $a0
 syscall				# perform the syscall
