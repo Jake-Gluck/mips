@@ -36,10 +36,12 @@
 .data
 # constants
 TempBuffer:  		.space 	2        	# Space for temporary input storage, 2 bytes
-.align 2         # Enforce word alignment for Deck
-Deck:   		.space 208              # Space for 52 cards, 4 bytes each
-.align 2         # Enforce word alignment for Discard
-Discard: 		.space 208            	# Space for 52 cards, 4 bytes each
+#.align 2         # Enforce word alignment for Deck
+#Deck:   		.space 208              # Space for 52 cards, 4 bytes each
+#.align 2         # Enforce word alignment for Discard
+#Discard: 		.space 208            	# Space for 52 cards, 4 bytes each
+Deck: .word 0:52 # space for 52 pointers
+Discard: .word 0:52 # space for 52 pointers
 CurrentDrawIndex: 	.word 51  		# Initially set to 51 after shuffling
 Multiplier: 		.word 1073807359 	# a sufficiently large prime
 Seed: 			.word 0 		# delcared seed for linear congruence algorithm
@@ -54,6 +56,7 @@ ShufflingMessage:	.asciiz "Shuffling cards...\n"
 ShufflePrompt:	.asciiz	"\nShuffle selected\n"
 DrawCardPrompt:	.asciiz "\nDraw card selected\n"
 QuitPrompt:	.asciiz "\nQuit selected\n"
+T2Message:	.asciiz	"\nThe value of $t2 is:\n"
 .text
 .globl main
 
@@ -88,13 +91,6 @@ syscall                  	# perform the syscall, discard the newline (if there i
 
 la $a0, TempBuffer   		# load the address of TempBuffer into $a0
 lb $t0, 0($a0)      		# load the first character from TempBuffer into $t0
-
-
-
-
-
-
-
     
 # check if user input is valid (s, S, d, D, q, or Q)
 li $t1, 115			# load ascii value for s
@@ -127,6 +123,7 @@ Endit:
 li $v0, 4			# syscall to to print a string
 la $a0, QuitPrompt	        # load the address of label ShufflePrompt into $a0
 syscall				# perform the syscall
+
 li $v0, 10			# syscall for exit
 syscall				# exit the program
 ##############################################################################
@@ -203,7 +200,7 @@ li $t2, 0			# load 0 to $t2, the counter that controls the loop, it will increme
 
 ClearLoop:
 #beqz $t2, 52, ShuffleDeck		# branch to ShuffleDeck when the counter($t2) = 0
-beq $t2, 52, ShuffleDeck		# branch to ShuffleDeck when the counter($t2) = 0
+beq $t2, 52, ShuffleDeck		# branch to ShuffleDeck when the counter($t2) = 52
 sw $zero, 0($t0)		# copies 0 into offset(Discard), removing the card that was in that index of Discard array
 addi $t0, $t0, 4		# increment to the next card in the Discard array
 addi $t2, $t2, 1		# increment the counter that controls the loop ($t2) by 1
@@ -215,17 +212,67 @@ li $t2, 0			# load 0 to $t2, the counter that controls the loop, it will increme
 
 ShuffleLoop:
 beq $t2, 52, ShuffleComplete	# branch to ShuffleComplete when the counter($t2) = 52
+
+# save $t2 to stack to preserve it across function call GetRandom52, otherwise $t2 in ShuffleLoop gets overwritten by a value in GetRandom52
+addiu $sp, $sp, -4         	# make space on stack
+sw $t2, 0($sp)             	# save $t2 to stack
+
+# generate random number and return it
 jal GetRandom52			# jump and link to GetRandom52 to generate a random number between 0 and 51
 move $t1, $s0			# copy randomly generated number from $s0 to $t1
 
-
+# restore $t2 from stack after GetRandom52
+lw $t2, 0($sp)             # load $t2 back from stack
+addiu $sp, $sp, 4          # restore stack pointer    
+    
 # calculate the offset for Deck[i] which is Deck[base address of Deck array + (i * 4)]
 la $t0, Deck			# load base address of Deck array to $t0
+
+
+
+
+
+# Debugging: Print the address being accessed
+move $a0, $t0          # Move the address of Deck[i] to $a0
+li $v0, 34             # Print address syscall
+syscall
+li $v0, 4			# syscall to to print a string
+la $a0, T2Message	        # load the address of label ShufflePrompt into $a0
+syscall				# perform the syscall
+# Debugging: Print the value of $t2 (the current index)
+move $a0, $t2
+li $v0, 1        # Print integer syscall
+syscall
+# print a Newline
+li $v0, 4			# syscall to to print a string
+la $a0, Newline	        	# load the address of label Newline into $a0
+syscall				# perform the syscall
+
+
+
+# calculate byte offset and add it to Deck array base address
 mul $t3, $t2, 4			# multiply $t2(counter aka [i]) by 4 bytes to get the byte offset, save to $t3
 add $t4, $t0, $t3		# add byte offset($t3) to Deck array base address($t0) to get Deck[in-order index]
+
+
+
+
+# debugging
+# print a Newline
+li $v0, 4			# syscall to to print a string
+la $a0, Newline	        	# load the address of label Newline into $a0
+syscall				# perform the syscall
+# Debugging: Print the address being accessed
+move $a0, $t4          # Move the address of Deck[i] to $a0
+li $v0, 34             # Print address syscall
+syscall
+
+
+
+
+
+
 lw $t5 0($t4)			# copy Deck[i] from $t4 to $t5, 
-
-
 
 # calculate the offset for Deck[randomly generated num] which is Deck[base addresss of Deck array + (randomly generated number * 4)]
 mul $t3, $t1, 4			# multiply random num ($t1) by 4 bytes to get the byte offset, save to $t3
