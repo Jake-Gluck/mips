@@ -57,6 +57,7 @@ ShufflePrompt:	.asciiz	"\nShuffle selected\n"
 DrawCardPrompt:	.asciiz "\nDraw card selected\n"
 QuitPrompt:	.asciiz "\nQuit selected\n"
 T2Message:	.asciiz	"\nThe value of $t2 is:\n"
+RandomMessage:	.asciiz "\nThe randomly generated number is: "
 .text
 .globl main
 
@@ -220,7 +221,20 @@ sw $t2, 0($sp)             	# save $t2 to stack
 # generate random number and return it
 jal GetRandom52			# jump and link to GetRandom52 to generate a random number between 0 and 51
 move $t1, $s0			# copy randomly generated number from $s0 to $t1
+##############################################################################
+##############################################################################
+##############################################################################
+#Debugging checking that GetRandom52 prints a random num each time
+li $v0, 4			# syscall to to print a string
+la $a0, RandomMessage	        # load the address of label ShufflePrompt into $a0
+syscall				# perform the 
 
+move $a0, $t1    # move random number to $a0 for printing
+li $v0, 1			# syscall to to print a int
+syscall				# print the random num 
+##############################################################################
+##############################################################################
+##############################################################################
 # restore $t2 from stack after GetRandom52
 lw $t2, 0($sp)             # load $t2 back from stack
 addiu $sp, $sp, 4          # restore stack pointer    
@@ -229,9 +243,9 @@ addiu $sp, $sp, 4          # restore stack pointer
 la $t0, Deck			# load base address of Deck array to $t0
 
 
-
-
-
+##############################################################################
+##############################################################################
+##############################################################################
 # Debugging: Print the address being accessed
 move $a0, $t0          # Move the address of Deck[i] to $a0
 li $v0, 34             # Print address syscall
@@ -247,7 +261,9 @@ syscall
 li $v0, 4			# syscall to to print a string
 la $a0, Newline	        	# load the address of label Newline into $a0
 syscall				# perform the syscall
-
+##############################################################################
+##############################################################################
+##############################################################################
 
 
 # calculate byte offset and add it to Deck array base address
@@ -256,7 +272,9 @@ add $t4, $t0, $t3		# add byte offset($t3) to Deck array base address($t0) to get
 
 
 
-
+##############################################################################
+##############################################################################
+##############################################################################
 # debugging
 # print a Newline
 li $v0, 4			# syscall to to print a string
@@ -266,7 +284,9 @@ syscall				# perform the syscall
 move $a0, $t4          # Move the address of Deck[i] to $a0
 li $v0, 34             # Print address syscall
 syscall
-
+##############################################################################
+##############################################################################
+##############################################################################
 
 
 
